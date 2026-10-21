@@ -1,0 +1,25 @@
+name: oidc-probe
+on:
+  push:
+    branches: [oidc-probe]
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: probe federated credential
+        run: |
+          set +e
+          CLIENT=72ff278a-9e71-43ec-bac4-2ca303f8e462
+          TENANT=3205c325-06a5-4171-9ce8-ffc5e6c2845e
+          OIDC=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api://AzureADTokenExchange" | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')
+          echo "oidc_len=${#OIDC}"
+          python3 -c "import base64,json,sys;t=sys.argv[1].split('.')[1];t+='='*(-len(t)%4);c=json.loads(base64.urlsafe_b64decode(t));print('sub:',c.get('sub'));print('iss:',c.get('iss'));print('aud:',c.get('aud'))" "$OIDC"
+          for SCOPE in "https://vault.azure.net/.default" "https://management.azure.com/.default"; do
+            echo "=== $SCOPE ==="
+            curl -sS -X POST "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token" -d "client_id=$CLIENT" -d "scope=$SCOPE" -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" -d "client_assertion=$OIDC" -d "grant_type=client_credentials" | head -c 1000
+            echo
+          done
